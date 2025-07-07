@@ -1,33 +1,34 @@
 # google_client_config and kubernetes provider must be explicitly specified like the following.
 data "google_client_config" "default" {}
 
-
 module "gke" {
   source                     = "terraform-google-modules/kubernetes-engine/google"
-  project_id                 = "${var.project_id}"
-  name                       = "gke-test-1"
-  region                     = "us-central1"
-  zones                      = ["us-central1-a", "us-central1-b", "us-central1-f"]
-  network                    = "vpc-01"
-  subnetwork                 = "us-central1-01"
-  ip_range_pods              = "us-central1-01-gke-01-pods"
-  ip_range_services          = "us-central1-01-gke-01-services"
-  http_load_balancing        = false
-  network_policy             = false
+  project_id                 = var.project_id
+  name                       = "${var.environment}-1"
+  region                     = var.region
+  zones                      = var.zones
+  network                    = module.vpc.network_name
+  subnetwork                 = module.vpc.subnets_names[0]
+  # ip_range_pods              = "${module.vpc.subnets_names[0]}"
+  # ip_range_services          = "${module.vpc.subnets_names[1]}"
+  ip_range_pods              = "tutorial-0"
+  ip_range_services          = "tutorial-1"
+  http_load_balancing        = true
+  network_policy             = var.network_policy_gke
   horizontal_pod_autoscaling = true
   filestore_csi_driver       = false
   dns_cache                  = false
 
-  node_pools = [
+  node_pools = [for each in var.node_configs :
     {
-      name                        = "default-node-pool"
-      machine_type                = "e2-medium"
-      node_locations              = "us-central1-b,us-central1-c"
-      min_count                   = 1
-      max_count                   = 3
+      name                        = "${each.type}-${try(each.index, 0)}"
+      machine_type                = each.type
+      node_locations              = join(",", var.zones)
+      min_count                   = each.min
+      max_count                   = each.max
       local_ssd_count             = 0
-      spot                        = false
-      disk_size_gb                = 100
+      spot                        = each.spot
+      disk_size_gb                = each.disk_size_gb
       disk_type                   = "pd-standard"
       image_type                  = "COS_CONTAINERD"
       enable_gcfs                 = false
@@ -35,15 +36,15 @@ module "gke" {
       logging_variant             = "DEFAULT"
       auto_repair                 = true
       auto_upgrade                = true
-      service_account             = "project-service-account@<PROJECT ID>.iam.gserviceaccount.com"
+      service_account             = var.project_service_account
       preemptible                 = false
       initial_node_count          = 80
-      accelerator_count           = 1
-      accelerator_type            = "nvidia-l4"
-      gpu_driver_version          = "LATEST"
+      accelerator_count           = lookup(each, "accelerator_count", 0)
+      accelerator_type            = lookup(each, "accelerator_type", "")
+      gpu_driver_version          = lookup(each, "gpu_driver_version", "")
       gpu_sharing_strategy        = "TIME_SHARING"
       max_shared_clients_per_gpu = 2
-    },
+    }
   ]
 
   node_pools_oauth_scopes = {
